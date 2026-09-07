@@ -272,7 +272,7 @@
   <main>
     <section class="intro" aria-labelledby="page-title">
       <div><p class="eyebrow" id="todayLabel">Oggi</p><h2 id="page-title">Registra la tua giornata.</h2></div>
-      <div class="intro-note">I dati restano in questo browser.<br><span id="profileSummary">Altezza: 1,71 m.</span></div>
+      <div class="intro-note">I dati restano in questo browser.<br><span id="profileSummary">Profilo da configurare.</span></div>
     </section>
 
     <section class="stats" aria-label="Riepilogo">
@@ -475,10 +475,11 @@
         const saved = JSON.parse(localStorage.getItem(PROFILE_KEY));
         const heightCm = Number(saved?.heightCm);
         const targetBmi = Number(saved?.targetBmi);
-        return {heightCm: heightCm >= 100 && heightCm <= 250 ? heightCm : 171, sex: saved?.sex === 'F' ? 'F' : 'M', targetBmi: targetBmi >= 10 && targetBmi <= 60 ? targetBmi : 23.5};
-      } catch (_) { return {heightCm:171, sex:'M',targetBmi:23.5}; }
+        return {heightCm: heightCm >= 100 && heightCm <= 250 ? heightCm : null, sex: saved?.sex === 'M' || saved?.sex === 'F' ? saved.sex : '', targetBmi: targetBmi >= 10 && targetBmi <= 60 ? targetBmi : 23.5};
+      } catch (_) { return {heightCm:null, sex:'', targetBmi:23.5}; }
     }
     function normalize(items) {
+      if(!Array.isArray(items))return [];
       const map = new Map();
       items.forEach(r => {
         if (!r || !/^\d{4}-\d{2}-\d{2}$/.test(r.date) || !Number.isFinite(Number(r.weight))) return;
@@ -541,9 +542,10 @@
       change.className='stat-value '+(delta<0?'positive':delta>0?'negative':'');
       const recent=records.slice(-7); const avg=recent.length?recent.reduce((s,r)=>s+r.weight,0)/recent.length:null;
       $('#statSeven').textContent=avg===null?'—':`${formatWeight(avg)} kg`;
-      const heightM=profile.heightCm/100;
-      $('#statBmi').textContent=last?(last.weight/(heightM*heightM)).toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
-      $('#profileSummary').textContent=`Altezza: ${(profile.heightCm/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} m · Sesso: ${profile.sex} · Target BMI: ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})}`;
+      const profileReady=Number.isFinite(profile.heightCm)&&Boolean(profile.sex);
+      const heightM=profileReady?profile.heightCm/100:null;
+      $('#statBmi').textContent=last&&heightM?(last.weight/(heightM*heightM)).toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
+      $('#profileSummary').textContent=profileReady?`Altezza: ${(profile.heightCm/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} m · Sesso: ${profile.sex} · Target BMI: ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})}`:'Completa altezza e sesso nelle impostazioni.';
       $('#historySummary').textContent=records.length===1?'1 registrazione':`${records.length} registrazioni`;
       historyList.innerHTML='';
       if(!records.length){historyList.innerHTML='<div class="empty">Nessun dato registrato.<br>Inizia compilando la giornata.</div>';return;}
@@ -595,7 +597,7 @@
     });
 
     $('#exportButton').addEventListener('click',()=>{
-      const payload={app:'W8Log',version:2,exportedAt:new Date().toISOString(),profile,records};
+      const payload={app:'W8Log',version:3,exportedAt:new Date().toISOString(),profile:{heightCm:profile.heightCm,sex:profile.sex,targetBmi:profile.targetBmi},records};
       const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
       const a=document.createElement('a');a.href=url;a.download=`controllo-peso-backup-${localISO()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);showToast('Backup esportato.');
     });
@@ -604,13 +606,17 @@
       const file=e.target.files[0];if(!file)return;
       try{
         const parsed=JSON.parse(await file.text());const incoming=normalize(Array.isArray(parsed)?parsed:parsed.records);
-        if(!incoming.length)throw new Error('empty');
-        if(!confirm(`Importare ${incoming.length} registrazioni? I dati attuali saranno sostituiti.`))return;
+        const importedProfile=!Array.isArray(parsed)&&parsed.profile?parsed.profile:null;
+        const importedHeight=Number(importedProfile?.heightCm);
+        const importedSex=importedProfile?.sex==='M'||importedProfile?.sex==='F'?importedProfile.sex:'';
+        const importedTarget=Number(importedProfile?.targetBmi);
+        const hasValidProfile=importedHeight>=100&&importedHeight<=250&&Boolean(importedSex);
+        if(!incoming.length&&!hasValidProfile)throw new Error('empty');
+        if(!confirm(`Ripristinare ${incoming.length} registrazioni${hasValidProfile?' e le impostazioni del profilo':''}? I dati attuali saranno sostituiti.`))return;
         records=incoming;
-        if(parsed.profile){
-          const importedHeight=Number(parsed.profile.heightCm);
-          const importedTarget=Number(parsed.profile.targetBmi);
-          if(importedHeight>=100&&importedHeight<=250){profile={heightCm:importedHeight,sex:parsed.profile.sex==='F'?'F':'M',targetBmi:importedTarget>=10&&importedTarget<=60?importedTarget:profile.targetBmi};localStorage.setItem(PROFILE_KEY,JSON.stringify(profile));}
+        if(hasValidProfile){
+          profile={heightCm:importedHeight,sex:importedSex,targetBmi:importedTarget>=10&&importedTarget<=60?importedTarget:23.5};
+          localStorage.setItem(PROFILE_KEY,JSON.stringify(profile));
         }
         persist();render();resetForm();showToast('Backup importato.');
       }catch(_){showToast('Il file non è un backup valido.');}finally{e.target.value='';}
@@ -621,14 +627,15 @@
       const actual=records.map(r=>({date:r.date,value:r.weight}));
       const effective=actual.map(p=>({...p}));
       const projected=[];
-      const targetWeight=profile.targetBmi*Math.pow(profile.heightCm/100,2);
+      const hasTarget=Number.isFinite(profile.heightCm)&&profile.heightCm>=100&&Number.isFinite(profile.targetBmi);
+      const targetWeight=hasTarget?profile.targetBmi*Math.pow(profile.heightCm/100,2):null;
       const latest=actual[actual.length-1];
       const initialAnchor=effective[Math.max(0,effective.length-7)];
       const initialSpan=Math.max(1,daysBetween(initialAnchor.date,latest.date));
       const initialSlope=effective.length>1?(latest.value-initialAnchor.value)/initialSpan:0;
-      const targetAlreadyReached=latest.value<=targetWeight;
+      const targetAlreadyReached=hasTarget&&latest.value<=targetWeight;
       const targetDirection=-1;
-      const towardTarget=targetAlreadyReached||initialSlope<0;
+      const towardTarget=hasTarget&&(targetAlreadyReached||initialSlope<0);
       let targetPoint=targetAlreadyReached?{date:latest.date,value:latest.value,globalIndex:actual.length-1,already:true}:null;
       const horizon=towardTarget?MAX_PROJECTION_DAYS:MIN_PROJECTION_DAYS;
       for(let i=1;i<=horizon;i++){
@@ -642,7 +649,7 @@
         if(effective.length===1)slope=0;
         const value=last.value+slope*TREND_COEFFICIENT;
         const point={date:targetDate,value}; projected.push(point); effective.push(point);
-        if(!targetPoint&&((targetDirection<0&&value<=targetWeight)||(targetDirection>0&&value>=targetWeight))){targetPoint={...point,globalIndex:actual.length+i-1,projectionIndex:i};}
+        if(hasTarget&&!targetPoint&&((targetDirection<0&&value<=targetWeight)||(targetDirection>0&&value>=targetWeight))){targetPoint={...point,globalIndex:actual.length+i-1,projectionIndex:i};}
         if(i>=MIN_PROJECTION_DAYS&&(!towardTarget||(targetPoint&&i>=targetPoint.projectionIndex+7)))break;
       }
       return {actual,projected,targetWeight,targetPoint,towardTarget};
@@ -657,7 +664,7 @@
       const {actual,projected,targetWeight,targetPoint}=projectionData();const all=[...actual,...projected];
       if(!all.length){ctx.fillStyle='#66706e';ctx.font='14px -apple-system, sans-serif';ctx.textAlign='center';ctx.fillText('Aggiungi almeno una registrazione per vedere il grafico.',w/2,h/2);return;}
       const pad={l:48,r:18,t:22,b:42}; const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
-      const vals=[...all.map(p=>p.value),targetWeight];let min=Math.min(...vals),max=Math.max(...vals);
+      const vals=all.map(p=>p.value);if(Number.isFinite(targetWeight))vals.push(targetWeight);let min=Math.min(...vals),max=Math.max(...vals);
       const yMin=Math.min(68,Math.floor(min-1));const yMax=Math.ceil(max+1);const ySpan=Math.max(2,yMax-yMin);
       const x=i=>pad.l+(i/(all.length-1||1))*pw;const y=v=>pad.t+(yMax-v)/ySpan*ph;
       ctx.lineWidth=1;ctx.font='10px -apple-system, sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
@@ -669,13 +676,15 @@
       function line(points,startIndex,color){if(points.length<1)return;ctx.strokeStyle=color;ctx.lineWidth=3;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();points.forEach((p,i)=>{const px=x(startIndex+i),py=y(p.value);i?ctx.lineTo(px,py):ctx.moveTo(px,py);});ctx.stroke();}
       line(actual,0,'#146287');
       if(projected.length){const bridge=[actual[actual.length-1],...projected];line(bridge,actual.length-1,'#e96f2d');}
-      const targetY=y(targetWeight);
-      ctx.save();ctx.setLineDash([7,5]);ctx.strokeStyle='#2f7d32';ctx.lineWidth=1.7;ctx.beginPath();ctx.moveTo(pad.l,targetY);ctx.lineTo(w-pad.r,targetY);ctx.stroke();ctx.restore();
-      ctx.fillStyle='#215f27';ctx.font='700 10px -apple-system, sans-serif';ctx.textAlign='right';ctx.textBaseline='bottom';ctx.fillText(`Target ${formatWeight(targetWeight)} kg`,w-pad.r,targetY-5);
-      if(targetPoint){
+      if(Number.isFinite(targetWeight)){
+        const targetY=y(targetWeight);
+        ctx.save();ctx.setLineDash([7,5]);ctx.strokeStyle='#2f7d32';ctx.lineWidth=1.7;ctx.beginPath();ctx.moveTo(pad.l,targetY);ctx.lineTo(w-pad.r,targetY);ctx.stroke();ctx.restore();
+        ctx.fillStyle='#215f27';ctx.font='700 10px -apple-system, sans-serif';ctx.textAlign='right';ctx.textBaseline='bottom';ctx.fillText(`Target ${formatWeight(targetWeight)} kg`,w-pad.r,targetY-5);
+        if(targetPoint){
         const targetX=x(targetPoint.globalIndex);ctx.save();ctx.setLineDash([4,5]);ctx.strokeStyle='#2f7d32';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(targetX,pad.t);ctx.lineTo(targetX,h-pad.b);ctx.stroke();ctx.restore();
         ctx.fillStyle='#2f7d32';ctx.beginPath();ctx.arc(targetX,targetY,5,0,Math.PI*2);ctx.fill();
         ctx.font='800 10px -apple-system, sans-serif';ctx.textAlign=targetX>w*.72?'right':'left';ctx.textBaseline='top';ctx.fillText(formatDate(targetPoint.date,{day:'numeric',month:'short',year:'numeric'}),targetX+(targetX>w*.72?-7:7),targetY+7);
+        }
       }
       actual.forEach((p,i)=>{ctx.fillStyle='#146287';ctx.beginPath();ctx.arc(x(i),y(p.value),2.7,0,Math.PI*2);ctx.fill();});
       const first=actual[0];ctx.fillStyle='#b42318';ctx.font='700 12px -apple-system, sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(formatWeight(first.value),Math.min(w-45,x(0)+5),y(first.value)-5);
@@ -688,6 +697,7 @@
       const days=first&&last?daysBetween(first.date,last.date):0;$('#chartDays').textContent=String(days);
       const daily=first&&last&&days?(first.weight-last.weight)/days:0;$('#chartDaily').textContent=`${daily.toLocaleString('it-IT',{minimumFractionDigits:3,maximumFractionDigits:3})} kg`;
       const forecast=projectionData();
+      if(!Number.isFinite(forecast.targetWeight)){ $('#targetForecast').innerHTML='<strong>Target:</strong> completa altezza e sesso nelle impostazioni.'; return; }
       const targetLabel=`BMI ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})} · ${formatWeight(forecast.targetWeight)} kg`;
       if(!last) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · aggiungi un peso per calcolare la data.`;
       else if(forecast.targetPoint?.already) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · già raggiunto.`;
@@ -711,7 +721,7 @@
     window.addEventListener('resize',()=>{if(dialog.open)drawChart();});
 
     function openSettings() {
-      $('#profileHeight').value=String(profile.heightCm);
+      $('#profileHeight').value=profile.heightCm==null?'':String(profile.heightCm);
       $('#targetBmi').value=String(profile.targetBmi);
       setRadioIn(settingsForm,'sex',profile.sex);
       settingsDialog.showModal();
@@ -734,6 +744,7 @@
 
     $('#todayLabel').textContent=new Intl.DateTimeFormat('it-IT',{weekday:'long',day:'numeric',month:'long'}).format(new Date());
     resetForm();render();
+    if(!Number.isFinite(profile.heightCm)||!profile.sex)setTimeout(openSettings,0);
   })();
   </script>
 </body>
