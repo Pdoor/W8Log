@@ -214,6 +214,7 @@
     .legend i { width: 28px; height: 3px; border-radius: 2px; background: var(--blue); }
     .legend .smoothed i { background: #2b8a78; }
     .legend .projection i { background: var(--orange); }
+    .legend .fallback i { background: #7c3aed; }
     .legend .target i { height: 0; border-top: 2px dashed var(--green); background: transparent; }
     .data-note { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; text-align: center; }
     .target-forecast { margin: 0 0 14px; padding: 12px 15px; border: 1px solid #b9d3b6; border-radius: 13px; color: #174e20; background: var(--green-pale); font-size: 13px; line-height: 1.45; text-align: center; }
@@ -411,8 +412,8 @@
       <p class="plot-title">Storico e Proiezione</p>
       <p class="plot-subtitle" id="plotSubtitle">Trend esponenziale a 7 giorni e proiezione robusta sugli ultimi 28 giorni</p>
       <div class="canvas-wrap"><canvas id="weightChart" role="img" aria-label="Grafico del peso effettivo e della proiezione tendenziale"></canvas></div>
-      <div class="legend" aria-hidden="true"><span><i></i>Peso effettivo</span><span class="smoothed"><i></i>Trend 7 giorni</span><span class="projection"><i></i>Proiezione 28 giorni</span><span class="target"><i></i>Target BMI</span></div>
-      <p class="data-note">La tendenza attenua le oscillazioni giornaliere con una media esponenziale. La previsione usa una regressione robusta (Theil–Sen), richiede almeno 14 pesate in 21 giorni e non supera 180 giorni. È una stima statistica, non un'indicazione clinica.</p>
+      <div class="legend" aria-hidden="true"><span><i></i>Peso effettivo</span><span class="smoothed"><i></i>Trend 7 giorni</span><span class="projection"><i></i>Proiezione affidabile</span><span class="fallback"><i></i>Proiezione preliminare</span><span class="target"><i></i>Target BMI</span></div>
+      <p class="data-note">La tendenza attenua le oscillazioni giornaliere con una media esponenziale. La previsione arancione usa almeno 14 pesate distribuite su 21 giorni; con 14 pesate ma un periodo più breve compare la proiezione preliminare viola. Entrambe usano la regressione robusta Theil–Sen e non superano 180 giorni. Sono stime statistiche, non indicazioni cliniche.</p>
     </div>
   </dialog>
 
@@ -680,7 +681,7 @@
     function projectionData() {
       const hasTarget=Number.isFinite(profile.heightCm)&&profile.heightCm>=100&&Number.isFinite(profile.targetBmi);
       const targetWeight=hasTarget?profile.targetBmi*Math.pow(profile.heightCm/100,2):null;
-      if(!records.length)return {actual:[],trend:[],projected:[],targetWeight,targetPoint:null,forecastEligible:false,slope:null,uncertaintyDays:null};
+      if(!records.length)return {actual:[],trend:[],projected:[],targetWeight,targetPoint:null,forecastEligible:false,forecastMode:null,slope:null,uncertaintyDays:null};
 
       const actual=records.map(r=>({date:r.date,value:r.weight}));
       let smoothed=actual[0].value;
@@ -696,7 +697,10 @@
       const latest=actual[actual.length-1];
       const regression=actual.filter(point=>daysBetween(point.date,latest.date)<=REGRESSION_DAYS-1);
       const regressionSpan=regression.length>1?daysBetween(regression[0].date,latest.date):0;
-      const forecastEligible=regression.length>=MIN_FORECAST_READINGS&&regressionSpan>=MIN_FORECAST_SPAN_DAYS;
+      const standardEligible=regression.length>=MIN_FORECAST_READINGS&&regressionSpan>=MIN_FORECAST_SPAN_DAYS;
+      const fallbackEligible=regression.length>=MIN_FORECAST_READINGS&&regressionSpan>0;
+      const forecastMode=standardEligible?'standard':fallbackEligible?'fallback':null;
+      const forecastEligible=Boolean(forecastMode);
       let slope=null, uncertaintyDays=null, residualSigma=null;
       if(forecastEligible){
         const origin=regression[0].date;const slopes=[];
@@ -709,7 +713,8 @@
         const residuals=regression.map(point=>point.value-(intercept+slope*daysBetween(origin,point.date)));
         const residualMedian=median(residuals);
         residualSigma=1.4826*median(residuals.map(value=>Math.abs(value-residualMedian)));
-        if(Math.abs(slope)>0.001)uncertaintyDays=Math.min(90,Math.max(1,Math.ceil(1.96*residualSigma/Math.abs(slope))));
+        const uncertaintyMultiplier=forecastMode==='fallback'?2.58:1.96;
+        if(Math.abs(slope)>0.001)uncertaintyDays=Math.min(90,Math.max(1,Math.ceil(uncertaintyMultiplier*residualSigma/Math.abs(slope))));
       }
 
       const latestTrend=trend[trend.length-1].value;
@@ -728,7 +733,7 @@
       const horizon=profile.chartEndDate?Math.min(MAX_PROJECTION_DAYS,configuredHorizon):DEFAULT_PROJECTION_DAYS;
       const projected=[];
       if(forecastEligible)for(let day=1;day<=horizon;day++)projected.push({date:addDays(latest.date,day),value:latestTrend+slope*day});
-      return {actual,trend,projected,targetWeight,targetPoint,forecastEligible,slope,uncertaintyDays,residualSigma,regressionCount:regression.length,regressionSpan};
+      return {actual,trend,projected,targetWeight,targetPoint,forecastEligible,forecastMode,slope,uncertaintyDays,residualSigma,regressionCount:regression.length,regressionSpan};
     }
 
     function drawChart() {
@@ -737,7 +742,7 @@
       canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(rect.height*dpr));
       const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);const w=rect.width,h=rect.height;
       ctx.clearRect(0,0,w,h);
-      const {actual,trend,projected,targetWeight,targetPoint}=projectionData();const all=[...actual,...projected];
+      const {actual,trend,projected,targetWeight,targetPoint,forecastMode}=projectionData();const all=[...actual,...projected];
       if(!all.length){ctx.fillStyle='#66706e';ctx.font='14px -apple-system, sans-serif';ctx.textAlign='center';ctx.fillText('Aggiungi almeno una registrazione per vedere il grafico.',w/2,h/2);return;}
       const pad={l:48,r:18,t:22,b:42}; const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
       const vals=[...all,...trend].map(p=>p.value);if(Number.isFinite(targetWeight))vals.push(targetWeight);let min=Math.min(...vals),max=Math.max(...vals);
@@ -755,7 +760,7 @@
       function line(points,color,width=3){if(points.length<1)return;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();points.forEach((p,i)=>{const px=x(p.date),py=y(p.value);i?ctx.lineTo(px,py):ctx.moveTo(px,py);});ctx.stroke();}
       line(actual,'#146287',2);
       line(trend,'#2b8a78',3);
-      if(projected.length){const bridge=[trend[trend.length-1],...projected];line(bridge,'#e96f2d',3);}
+      if(projected.length){const bridge=[trend[trend.length-1],...projected];line(bridge,forecastMode==='fallback'?'#7c3aed':'#e96f2d',3);}
       if(Number.isFinite(targetWeight)){
         const targetY=y(targetWeight);
         ctx.save();ctx.setLineDash([7,5]);ctx.strokeStyle='#2f7d32';ctx.lineWidth=1.7;ctx.beginPath();ctx.moveTo(pad.l,targetY);ctx.lineTo(w-pad.r,targetY);ctx.stroke();ctx.restore();
@@ -779,13 +784,14 @@
       const days=startingDate&&last?Math.max(0,daysBetween(startingDate,last.date)):0;$('#chartDays').textContent=String(days);
       const daily=Number.isFinite(startingWeight)&&last&&days?(startingWeight-last.weight)/days:0;$('#chartDaily').textContent=`${daily.toLocaleString('it-IT',{minimumFractionDigits:3,maximumFractionDigits:3})} kg`;
       const forecast=projectionData();
-      $('#plotSubtitle').textContent=`Trend esponenziale a 7 giorni e proiezione robusta sugli ultimi 28 giorni${profile.chartEndDate?` · asse fino al ${formatNumericDate(profile.chartEndDate)}`:''}`;
+      const modeLabel=forecast.forecastMode==='fallback'?' · proiezione preliminare attiva':forecast.forecastMode==='standard'?' · proiezione affidabile attiva':'';
+      $('#plotSubtitle').textContent=`Trend esponenziale a 7 giorni e regressione robusta sugli ultimi 28 giorni${modeLabel}${profile.chartEndDate?` · asse fino al ${formatNumericDate(profile.chartEndDate)}`:''}`;
       if(!Number.isFinite(forecast.targetWeight)){ $('#targetForecast').innerHTML='<strong>Target:</strong> completa altezza e sesso nelle impostazioni.'; return; }
       const targetLabel=`BMI ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})} · ${formatWeight(forecast.targetWeight)} kg`;
       if(!last) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · aggiungi un peso per calcolare la data.`;
       else if(forecast.targetPoint?.already) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · già raggiunto.`;
       else if(!forecast.forecastEligible) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · servono almeno ${MIN_FORECAST_READINGS} pesate distribuite su ${MIN_FORECAST_SPAN_DAYS} giorni negli ultimi ${REGRESSION_DAYS}.`;
-      else if(forecast.targetPoint){const range=forecast.uncertaintyDays?` ± ${forecast.uncertaintyDays} giorni`:'';$('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · data stimata <strong>${formatDate(forecast.targetPoint.date)}</strong>${range}.`;}
+      else if(forecast.targetPoint){const range=forecast.uncertaintyDays?` ± ${forecast.uncertaintyDays} giorni`:'';const qualifier=forecast.forecastMode==='fallback'?'stima preliminare':'data stimata';$('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · ${qualifier} <strong>${formatDate(forecast.targetPoint.date)}</strong>${range}.`;}
       else if(forecast.slope>=0) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · la tendenza robusta degli ultimi ${REGRESSION_DAYS} giorni non è discendente.`;
       else $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · previsione oltre l’orizzonte affidabile di ${MAX_PROJECTION_DAYS} giorni.`;
     }
