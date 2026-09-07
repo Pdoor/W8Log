@@ -219,7 +219,8 @@
     .target-forecast { margin: 0 0 14px; padding: 12px 15px; border: 1px solid #b9d3b6; border-radius: 13px; color: #174e20; background: var(--green-pale); font-size: 13px; line-height: 1.45; text-align: center; }
     .target-forecast strong { font-weight: 830; }
     .settings-dialog { width: min(460px, calc(100% - 24px)); }
-    .settings-body { padding: 22px; }
+    .settings-dialog[open] { display: flex; flex-direction: column; }
+    .settings-body { flex: 1 1 auto; min-height: 0; padding: 22px 22px calc(22px + env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     .settings-body .field + .field { margin-top: 20px; }
     .settings-help { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
     .settings-actions { display: flex; gap: 10px; margin-top: 24px; }
