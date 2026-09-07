@@ -209,9 +209,10 @@
     .plot-subtitle { margin: 0 0 10px; text-align: center; color: #176524; font-size: 11px; font-weight: 680; }
     .canvas-wrap { position: relative; min-width: 700px; height: min(58vh, 510px); border: 1px solid #e1dfd7; background: white; }
     canvas { width: 100%; height: 100%; display: block; }
-    .legend { display: flex; justify-content: center; gap: 22px; margin-top: 12px; color: #5f6664; font-size: 12px; }
+    .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px; margin-top: 12px; color: #5f6664; font-size: 12px; }
     .legend span { display: flex; align-items: center; gap: 7px; }
     .legend i { width: 28px; height: 3px; border-radius: 2px; background: var(--blue); }
+    .legend .smoothed i { background: #2b8a78; }
     .legend .projection i { background: var(--orange); }
     .legend .target i { height: 0; border-top: 2px dashed var(--green); background: transparent; }
     .data-note { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; text-align: center; }
@@ -407,10 +408,10 @@
       </div>
       <p class="target-forecast" id="targetForecast"><strong>Target BMI</strong> —</p>
       <p class="plot-title">Storico e Proiezione</p>
-      <p class="plot-subtitle">Proiezione tendenziale basata sulla media degli ultimi 7 giorni</p>
+      <p class="plot-subtitle">Trend esponenziale a 7 giorni e proiezione robusta sugli ultimi 28 giorni</p>
       <div class="canvas-wrap"><canvas id="weightChart" role="img" aria-label="Grafico del peso effettivo e della proiezione tendenziale"></canvas></div>
-      <div class="legend" aria-hidden="true"><span><i></i>Peso effettivo</span><span class="projection"><i></i>Peso proiezione adjusted</span><span class="target"><i></i>Target BMI</span></div>
-      <p class="data-note">La proiezione replica l'impostazione di Proiez2 e applica il coefficiente 0,999 alla tendenza. È una stima matematica, non un'indicazione clinica.</p>
+      <div class="legend" aria-hidden="true"><span><i></i>Peso effettivo</span><span class="smoothed"><i></i>Trend 7 giorni</span><span class="projection"><i></i>Proiezione 28 giorni</span><span class="target"><i></i>Target BMI</span></div>
+      <p class="data-note">La tendenza attenua le oscillazioni giornaliere con una media esponenziale. La previsione usa una regressione robusta (Theil–Sen), richiede almeno 14 pesate in 21 giorni e non supera 180 giorni. È una stima statistica, non un'indicazione clinica.</p>
     </div>
   </dialog>
 
@@ -468,9 +469,12 @@
     'use strict';
     const STORAGE_KEY = 'w8log-v3-records';
     const PROFILE_KEY = 'controllo-peso-v2-profile';
-    const MIN_PROJECTION_DAYS = 64;
-    const MAX_PROJECTION_DAYS = 730;
-    const TREND_COEFFICIENT = 0.999;
+    const TREND_ALPHA = 0.25;
+    const REGRESSION_DAYS = 28;
+    const MIN_FORECAST_READINGS = 14;
+    const MIN_FORECAST_SPAN_DAYS = 21;
+    const DEFAULT_PROJECTION_DAYS = 30;
+    const MAX_PROJECTION_DAYS = 180;
     const seedRecords = [];
 
     const $ = (s, root=document) => root.querySelector(s);
@@ -654,37 +658,64 @@
       }catch(_){showToast('Il file non è un backup valido.');}finally{e.target.value='';}
     });
 
+    function median(values) {
+      if(!values.length)return null;
+      const sorted=[...values].sort((a,b)=>a-b);const middle=Math.floor(sorted.length/2);
+      return sorted.length%2?sorted[middle]:(sorted[middle-1]+sorted[middle])/2;
+    }
     function projectionData() {
-      if(!records.length)return {actual:[],projected:[],targetWeight:null,targetPoint:null,towardTarget:false};
-      const actual=records.map(r=>({date:r.date,value:r.weight}));
-      const effective=actual.map(p=>({...p}));
-      const projected=[];
       const hasTarget=Number.isFinite(profile.heightCm)&&profile.heightCm>=100&&Number.isFinite(profile.targetBmi);
       const targetWeight=hasTarget?profile.targetBmi*Math.pow(profile.heightCm/100,2):null;
+      if(!records.length)return {actual:[],trend:[],projected:[],targetWeight,targetPoint:null,forecastEligible:false,slope:null,uncertaintyDays:null};
+
+      const actual=records.map(r=>({date:r.date,value:r.weight}));
+      let smoothed=actual[0].value;
+      const trend=actual.map((point,index)=>{
+        if(index){
+          const gap=Math.max(1,daysBetween(actual[index-1].date,point.date));
+          const timeAdjustedAlpha=1-Math.pow(1-TREND_ALPHA,gap);
+          smoothed=timeAdjustedAlpha*point.value+(1-timeAdjustedAlpha)*smoothed;
+        }
+        return {date:point.date,value:smoothed};
+      });
+
       const latest=actual[actual.length-1];
-      const initialAnchor=effective[Math.max(0,effective.length-7)];
-      const initialSpan=Math.max(1,daysBetween(initialAnchor.date,latest.date));
-      const initialSlope=effective.length>1?(latest.value-initialAnchor.value)/initialSpan:0;
-      const targetAlreadyReached=hasTarget&&latest.value<=targetWeight;
-      const targetDirection=-1;
-      const towardTarget=hasTarget&&(targetAlreadyReached||initialSlope<0);
-      let targetPoint=targetAlreadyReached?{date:latest.date,value:latest.value,globalIndex:actual.length-1,already:true}:null;
-      const horizon=towardTarget?MAX_PROJECTION_DAYS:MIN_PROJECTION_DAYS;
-      for(let i=1;i<=horizon;i++){
-        const last=effective[effective.length-1];
-        const targetDate=addDays(last.date,1);
-        const lookbackDate=addDays(last.date,-7);
-        let anchor=effective.find(p=>p.date===lookbackDate);
-        if(!anchor) anchor=effective[Math.max(0,effective.length-7)];
-        const span=Math.max(1,daysBetween(anchor.date,last.date));
-        let slope=(last.value-anchor.value)/span;
-        if(effective.length===1)slope=0;
-        const value=last.value+slope*TREND_COEFFICIENT;
-        const point={date:targetDate,value}; projected.push(point); effective.push(point);
-        if(hasTarget&&!targetPoint&&((targetDirection<0&&value<=targetWeight)||(targetDirection>0&&value>=targetWeight))){targetPoint={...point,globalIndex:actual.length+i-1,projectionIndex:i};}
-        if(i>=MIN_PROJECTION_DAYS&&(!towardTarget||(targetPoint&&i>=targetPoint.projectionIndex+7)))break;
+      const regression=actual.filter(point=>daysBetween(point.date,latest.date)<=REGRESSION_DAYS-1);
+      const regressionSpan=regression.length>1?daysBetween(regression[0].date,latest.date):0;
+      const forecastEligible=regression.length>=MIN_FORECAST_READINGS&&regressionSpan>=MIN_FORECAST_SPAN_DAYS;
+      let slope=null, uncertaintyDays=null, residualSigma=null;
+      if(forecastEligible){
+        const origin=regression[0].date;const slopes=[];
+        for(let i=0;i<regression.length-1;i++)for(let j=i+1;j<regression.length;j++){
+          const span=daysBetween(regression[i].date,regression[j].date);
+          if(span>0)slopes.push((regression[j].value-regression[i].value)/span);
+        }
+        slope=median(slopes);
+        const intercept=median(regression.map(point=>point.value-slope*daysBetween(origin,point.date)));
+        const residuals=regression.map(point=>point.value-(intercept+slope*daysBetween(origin,point.date)));
+        const residualMedian=median(residuals);
+        residualSigma=1.4826*median(residuals.map(value=>Math.abs(value-residualMedian)));
+        if(Math.abs(slope)>0.001)uncertaintyDays=Math.min(90,Math.max(1,Math.ceil(1.96*residualSigma/Math.abs(slope))));
       }
-      return {actual,projected,targetWeight,targetPoint,towardTarget};
+
+      const latestTrend=trend[trend.length-1].value;
+      const targetAlreadyReached=hasTarget&&latest.value<=targetWeight;
+      let targetPoint=targetAlreadyReached?{date:latest.date,value:latest.value,already:true}:null;
+      let daysToTarget=null;
+      if(!targetAlreadyReached&&forecastEligible&&slope<0&&latestTrend>targetWeight){
+        daysToTarget=(targetWeight-latestTrend)/slope;
+        if(daysToTarget>0&&daysToTarget<=MAX_PROJECTION_DAYS){
+          const days=Math.ceil(daysToTarget);
+          targetPoint={date:addDays(latest.date,days),value:targetWeight,projectionDays:days};
+        }
+      }
+
+      let horizon=DEFAULT_PROJECTION_DAYS;
+      if(targetPoint&&!targetPoint.already)horizon=Math.min(MAX_PROJECTION_DAYS,Math.max(DEFAULT_PROJECTION_DAYS,targetPoint.projectionDays+7));
+      else if(forecastEligible&&slope<0&&daysToTarget>MAX_PROJECTION_DAYS)horizon=MAX_PROJECTION_DAYS;
+      const projected=[];
+      if(forecastEligible)for(let day=1;day<=horizon;day++)projected.push({date:addDays(latest.date,day),value:latestTrend+slope*day});
+      return {actual,trend,projected,targetWeight,targetPoint,forecastEligible,slope,uncertaintyDays,residualSigma,regressionCount:regression.length,regressionSpan};
     }
 
     function drawChart() {
@@ -693,33 +724,35 @@
       canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(rect.height*dpr));
       const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);const w=rect.width,h=rect.height;
       ctx.clearRect(0,0,w,h);
-      const {actual,projected,targetWeight,targetPoint}=projectionData();const all=[...actual,...projected];
+      const {actual,trend,projected,targetWeight,targetPoint}=projectionData();const all=[...actual,...projected];
       if(!all.length){ctx.fillStyle='#66706e';ctx.font='14px -apple-system, sans-serif';ctx.textAlign='center';ctx.fillText('Aggiungi almeno una registrazione per vedere il grafico.',w/2,h/2);return;}
       const pad={l:48,r:18,t:22,b:42}; const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
-      const vals=all.map(p=>p.value);if(Number.isFinite(targetWeight))vals.push(targetWeight);let min=Math.min(...vals),max=Math.max(...vals);
+      const vals=[...all,...trend].map(p=>p.value);if(Number.isFinite(targetWeight))vals.push(targetWeight);let min=Math.min(...vals),max=Math.max(...vals);
       const yMin=Math.min(68,Math.floor(min-1));const yMax=Math.ceil(max+1);const ySpan=Math.max(2,yMax-yMin);
-      const x=i=>pad.l+(i/(all.length-1||1))*pw;const y=v=>pad.t+(yMax-v)/ySpan*ph;
+      const firstDate=actual[0].date;const lastDate=all[all.length-1].date;const totalDays=Math.max(1,daysBetween(firstDate,lastDate));
+      const x=date=>pad.l+(daysBetween(firstDate,date)/totalDays)*pw;const y=v=>pad.t+(yMax-v)/ySpan*ph;
       ctx.lineWidth=1;ctx.font='10px -apple-system, sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
       const gridStep=ySpan>25?5:ySpan>12?2:1;
       for(let tick=Math.ceil(yMin/gridStep)*gridStep;tick<=yMax;tick+=gridStep){const yy=y(tick);ctx.strokeStyle='#dedfdc';ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(w-pad.r,yy);ctx.stroke();ctx.fillStyle='#6b716f';ctx.fillText(String(tick),pad.l-8,yy);}
       ctx.textAlign='center';ctx.textBaseline='top';ctx.fillStyle='#747a78';
-      const maxLabels=Math.max(4,Math.floor(pw/82));const labelEvery=Math.max(1,Math.ceil(all.length/maxLabels));
-      all.forEach((p,i)=>{if(i%labelEvery&&i!==all.length-1)return;const dt=parseDate(p.date);ctx.fillText(`${dt.getDate()} ${new Intl.DateTimeFormat('it-IT',{month:'short'}).format(dt)}`,x(i),h-pad.b+11);});
-      function line(points,startIndex,color){if(points.length<1)return;ctx.strokeStyle=color;ctx.lineWidth=3;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();points.forEach((p,i)=>{const px=x(startIndex+i),py=y(p.value);i?ctx.lineTo(px,py):ctx.moveTo(px,py);});ctx.stroke();}
-      line(actual,0,'#146287');
-      if(projected.length){const bridge=[actual[actual.length-1],...projected];line(bridge,actual.length-1,'#e96f2d');}
+      const labelCount=Math.max(3,Math.min(7,Math.floor(pw/90)));
+      for(let i=0;i<labelCount;i++){const day=Math.round(totalDays*i/(labelCount-1));const date=addDays(firstDate,day);const dt=parseDate(date);ctx.fillText(`${dt.getDate()} ${new Intl.DateTimeFormat('it-IT',{month:'short'}).format(dt)}`,x(date),h-pad.b+11);}
+      function line(points,color,width=3){if(points.length<1)return;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();points.forEach((p,i)=>{const px=x(p.date),py=y(p.value);i?ctx.lineTo(px,py):ctx.moveTo(px,py);});ctx.stroke();}
+      line(actual,'#146287',2);
+      line(trend,'#2b8a78',3);
+      if(projected.length){const bridge=[trend[trend.length-1],...projected];line(bridge,'#e96f2d',3);}
       if(Number.isFinite(targetWeight)){
         const targetY=y(targetWeight);
         ctx.save();ctx.setLineDash([7,5]);ctx.strokeStyle='#2f7d32';ctx.lineWidth=1.7;ctx.beginPath();ctx.moveTo(pad.l,targetY);ctx.lineTo(w-pad.r,targetY);ctx.stroke();ctx.restore();
         ctx.fillStyle='#215f27';ctx.font='700 10px -apple-system, sans-serif';ctx.textAlign='right';ctx.textBaseline='bottom';ctx.fillText(`Target ${formatWeight(targetWeight)} kg`,w-pad.r,targetY-5);
         if(targetPoint){
-        const targetX=x(targetPoint.globalIndex);ctx.save();ctx.setLineDash([4,5]);ctx.strokeStyle='#2f7d32';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(targetX,pad.t);ctx.lineTo(targetX,h-pad.b);ctx.stroke();ctx.restore();
+        const targetX=x(targetPoint.date);ctx.save();ctx.setLineDash([4,5]);ctx.strokeStyle='#2f7d32';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(targetX,pad.t);ctx.lineTo(targetX,h-pad.b);ctx.stroke();ctx.restore();
         ctx.fillStyle='#2f7d32';ctx.beginPath();ctx.arc(targetX,targetY,5,0,Math.PI*2);ctx.fill();
         ctx.font='800 10px -apple-system, sans-serif';ctx.textAlign=targetX>w*.72?'right':'left';ctx.textBaseline='top';ctx.fillText(formatDate(targetPoint.date,{day:'numeric',month:'short',year:'numeric'}),targetX+(targetX>w*.72?-7:7),targetY+7);
         }
       }
-      actual.forEach((p,i)=>{ctx.fillStyle='#146287';ctx.beginPath();ctx.arc(x(i),y(p.value),2.7,0,Math.PI*2);ctx.fill();});
-      const first=actual[0];ctx.fillStyle='#b42318';ctx.font='700 12px -apple-system, sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(formatWeight(first.value),Math.min(w-45,x(0)+5),y(first.value)-5);
+      actual.forEach(p=>{ctx.fillStyle='#146287';ctx.beginPath();ctx.arc(x(p.date),y(p.value),2.7,0,Math.PI*2);ctx.fill();});
+      const first=actual[0];ctx.fillStyle='#b42318';ctx.font='700 12px -apple-system, sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(formatWeight(first.value),Math.min(w-45,x(first.date)+5),y(first.value)-5);
     }
     function populateChartKpis(){
       const first=records[0],last=records[records.length-1];
@@ -735,8 +768,10 @@
       const targetLabel=`BMI ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})} · ${formatWeight(forecast.targetWeight)} kg`;
       if(!last) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · aggiungi un peso per calcolare la data.`;
       else if(forecast.targetPoint?.already) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · già raggiunto.`;
-      else if(forecast.targetPoint) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · data stimata <strong>${formatDate(forecast.targetPoint.date)}</strong>.`;
-      else $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · la tendenza attuale non consente una data stimata.`;
+      else if(!forecast.forecastEligible) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · servono almeno ${MIN_FORECAST_READINGS} pesate distribuite su ${MIN_FORECAST_SPAN_DAYS} giorni negli ultimi ${REGRESSION_DAYS}.`;
+      else if(forecast.targetPoint){const range=forecast.uncertaintyDays?` ± ${forecast.uncertaintyDays} giorni`:'';$('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · data stimata <strong>${formatDate(forecast.targetPoint.date)}</strong>${range}.`;}
+      else if(forecast.slope>=0) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · la tendenza robusta degli ultimi ${REGRESSION_DAYS} giorni non è discendente.`;
+      else $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · previsione oltre l’orizzonte affidabile di ${MAX_PROJECTION_DAYS} giorni.`;
     }
     $('#openChart').addEventListener('click',()=>{
       populateChartKpis();
