@@ -408,7 +408,7 @@
       </div>
       <p class="target-forecast" id="targetForecast"><strong>Target BMI</strong> —</p>
       <p class="plot-title">Storico e Proiezione</p>
-      <p class="plot-subtitle">Trend esponenziale a 7 giorni e proiezione robusta sugli ultimi 28 giorni</p>
+      <p class="plot-subtitle" id="plotSubtitle">Trend esponenziale a 7 giorni e proiezione robusta sugli ultimi 28 giorni</p>
       <div class="canvas-wrap"><canvas id="weightChart" role="img" aria-label="Grafico del peso effettivo e della proiezione tendenziale"></canvas></div>
       <div class="legend" aria-hidden="true"><span><i></i>Peso effettivo</span><span class="smoothed"><i></i>Trend 7 giorni</span><span class="projection"><i></i>Proiezione 28 giorni</span><span class="target"><i></i>Target BMI</span></div>
       <p class="data-note">La tendenza attenua le oscillazioni giornaliere con una media esponenziale. La previsione usa una regressione robusta (Theil–Sen), richiede almeno 14 pesate in 21 giorni e non supera 180 giorni. È una stima statistica, non un'indicazione clinica.</p>
@@ -432,6 +432,11 @@
         <label class="field-label" for="startDate">Data inizio <small>obbligatoria</small></label>
         <input id="startDate" name="startDate" type="date" required>
         <p class="settings-help">Viene mostrata nel riepilogo e usata per il conteggio dei giorni.</p>
+      </div>
+      <div class="field">
+        <label class="field-label" for="chartEndDate">Data fine asse X <small>obbligatoria</small></label>
+        <input id="chartEndDate" name="chartEndDate" type="date" required>
+        <p class="settings-help">Stabilisce la data visualizzata all’estremità destra del grafico; la curva previsionale resta limitata a 180 giorni.</p>
       </div>
       <div class="field">
         <label class="field-label" for="profileHeight">Altezza <small>obbligatoria</small></label>
@@ -505,8 +510,13 @@
         const targetBmi = Number(saved?.targetBmi);
         const initialWeight = Number(saved?.initialWeight);
         const startDate = /^\d{4}-\d{2}-\d{2}$/.test(saved?.startDate||'') ? saved.startDate : '';
-        return {heightCm: heightCm >= 100 && heightCm <= 250 ? heightCm : null, sex: saved?.sex === 'M' || saved?.sex === 'F' ? saved.sex : '', targetBmi: targetBmi >= 10 && targetBmi <= 60 ? targetBmi : 23.5, initialWeight:initialWeight>=25&&initialWeight<=350?initialWeight:null, startDate};
-      } catch (_) { return {heightCm:null, sex:'', targetBmi:23.5, initialWeight:null, startDate:''}; }
+        const chartEndDate = /^\d{4}-\d{2}-\d{2}$/.test(saved?.chartEndDate||'') ? saved.chartEndDate : '';
+        return {heightCm: heightCm >= 100 && heightCm <= 250 ? heightCm : null, sex: saved?.sex === 'M' || saved?.sex === 'F' ? saved.sex : '', targetBmi: targetBmi >= 10 && targetBmi <= 60 ? targetBmi : 23.5, initialWeight:initialWeight>=25&&initialWeight<=350?initialWeight:null, startDate, chartEndDate};
+      } catch (_) { return {heightCm:null, sex:'', targetBmi:23.5, initialWeight:null, startDate:'', chartEndDate:''}; }
+    }
+    function profileIsComplete() {
+      const latestDate=records[records.length-1]?.date;
+      return Number.isFinite(profile.heightCm)&&Boolean(profile.sex)&&Number.isFinite(profile.initialWeight)&&Boolean(profile.startDate)&&Boolean(profile.chartEndDate)&&profile.chartEndDate>=profile.startDate&&(!latestDate||profile.chartEndDate>=latestDate);
     }
     function normalize(items) {
       if(!Array.isArray(items))return [];
@@ -574,7 +584,7 @@
       change.className='stat-value '+(delta<0?'positive':delta>0?'negative':'');
       const recent=records.slice(-7); const avg=recent.length?recent.reduce((s,r)=>s+r.weight,0)/recent.length:null;
       $('#statSeven').textContent=avg===null?'—':`${formatWeight(avg)} kg`;
-      const profileReady=Number.isFinite(profile.heightCm)&&Boolean(profile.sex)&&Number.isFinite(profile.initialWeight)&&Boolean(profile.startDate);
+      const profileReady=profileIsComplete();
       const heightM=Number.isFinite(profile.heightCm)?profile.heightCm/100:null;
       $('#statBmi').textContent=last&&heightM?(last.weight/(heightM*heightM)).toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
       $('#profileSummary').textContent=profileReady?`Altezza: ${(profile.heightCm/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} m · Sesso: ${profile.sex} · Target BMI: ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})}`:'Completa il profilo nelle impostazioni.';
@@ -630,7 +640,7 @@
     });
 
     $('#exportButton').addEventListener('click',()=>{
-      const payload={app:'W8Log',version:4,exportedAt:new Date().toISOString(),profile:{heightCm:profile.heightCm,sex:profile.sex,targetBmi:profile.targetBmi,initialWeight:profile.initialWeight,startDate:profile.startDate},records};
+      const payload={app:'W8Log',version:5,exportedAt:new Date().toISOString(),profile:{heightCm:profile.heightCm,sex:profile.sex,targetBmi:profile.targetBmi,initialWeight:profile.initialWeight,startDate:profile.startDate,chartEndDate:profile.chartEndDate},records};
       const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
       const a=document.createElement('a');a.href=url;a.download=`controllo-peso-backup-${localISO()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);showToast('Backup esportato.');
     });
@@ -645,16 +655,19 @@
         const importedTarget=Number(importedProfile?.targetBmi);
         const importedInitialWeight=Number(importedProfile?.initialWeight);
         const importedStartDate=/^\d{4}-\d{2}-\d{2}$/.test(importedProfile?.startDate||'')?importedProfile.startDate:'';
-        const hasProfileData=Boolean(importedProfile)&&(importedHeight>=100&&importedHeight<=250||Boolean(importedSex)||importedInitialWeight>=25&&importedInitialWeight<=350||Boolean(importedStartDate));
+        const importedChartEndDate=/^\d{4}-\d{2}-\d{2}$/.test(importedProfile?.chartEndDate||'')?importedProfile.chartEndDate:'';
+        const hasProfileData=Boolean(importedProfile)&&(importedHeight>=100&&importedHeight<=250||Boolean(importedSex)||importedInitialWeight>=25&&importedInitialWeight<=350||Boolean(importedStartDate)||Boolean(importedChartEndDate));
         if(!incoming.length&&!hasProfileData)throw new Error('empty');
         if(!confirm(`Ripristinare ${incoming.length} registrazioni${hasProfileData?' e le impostazioni del profilo':''}? I dati attuali saranno sostituiti.`))return;
         records=incoming;
         if(hasProfileData){
-          profile={heightCm:importedHeight>=100&&importedHeight<=250?importedHeight:null,sex:importedSex,targetBmi:importedTarget>=10&&importedTarget<=60?importedTarget:23.5,initialWeight:importedInitialWeight>=25&&importedInitialWeight<=350?importedInitialWeight:null,startDate:importedStartDate};
+          const importedLatestDate=incoming[incoming.length-1]?.date;
+          const validChartEnd=importedChartEndDate&&(!importedStartDate||importedChartEndDate>=importedStartDate)&&(!importedLatestDate||importedChartEndDate>=importedLatestDate);
+          profile={heightCm:importedHeight>=100&&importedHeight<=250?importedHeight:null,sex:importedSex,targetBmi:importedTarget>=10&&importedTarget<=60?importedTarget:23.5,initialWeight:importedInitialWeight>=25&&importedInitialWeight<=350?importedInitialWeight:null,startDate:importedStartDate,chartEndDate:validChartEnd?importedChartEndDate:''};
           localStorage.setItem(PROFILE_KEY,JSON.stringify(profile));
         }
         persist();render();resetForm();showToast('Backup importato.');
-        if(!Number.isFinite(profile.heightCm)||!profile.sex||!Number.isFinite(profile.initialWeight)||!profile.startDate)setTimeout(openSettings,250);
+        if(!profileIsComplete())setTimeout(openSettings,250);
       }catch(_){showToast('Il file non è un backup valido.');}finally{e.target.value='';}
     });
 
@@ -710,9 +723,8 @@
         }
       }
 
-      let horizon=DEFAULT_PROJECTION_DAYS;
-      if(targetPoint&&!targetPoint.already)horizon=Math.min(MAX_PROJECTION_DAYS,Math.max(DEFAULT_PROJECTION_DAYS,targetPoint.projectionDays+7));
-      else if(forecastEligible&&slope<0&&daysToTarget>MAX_PROJECTION_DAYS)horizon=MAX_PROJECTION_DAYS;
+      const configuredHorizon=profile.chartEndDate&&profile.chartEndDate>latest.date?daysBetween(latest.date,profile.chartEndDate):0;
+      const horizon=profile.chartEndDate?Math.min(MAX_PROJECTION_DAYS,configuredHorizon):DEFAULT_PROJECTION_DAYS;
       const projected=[];
       if(forecastEligible)for(let day=1;day<=horizon;day++)projected.push({date:addDays(latest.date,day),value:latestTrend+slope*day});
       return {actual,trend,projected,targetWeight,targetPoint,forecastEligible,slope,uncertaintyDays,residualSigma,regressionCount:regression.length,regressionSpan};
@@ -729,7 +741,9 @@
       const pad={l:48,r:18,t:22,b:42}; const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
       const vals=[...all,...trend].map(p=>p.value);if(Number.isFinite(targetWeight))vals.push(targetWeight);let min=Math.min(...vals),max=Math.max(...vals);
       const yMin=Math.min(68,Math.floor(min-1));const yMax=Math.ceil(max+1);const ySpan=Math.max(2,yMax-yMin);
-      const firstDate=actual[0].date;const lastDate=all[all.length-1].date;const totalDays=Math.max(1,daysBetween(firstDate,lastDate));
+      const firstDate=actual[0].date;
+      const configuredEnd=profile.chartEndDate&&profile.chartEndDate>=firstDate?profile.chartEndDate:'';
+      const lastDate=configuredEnd||all[all.length-1].date;const totalDays=Math.max(1,daysBetween(firstDate,lastDate));
       const x=date=>pad.l+(daysBetween(firstDate,date)/totalDays)*pw;const y=v=>pad.t+(yMax-v)/ySpan*ph;
       ctx.lineWidth=1;ctx.font='10px -apple-system, sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
       const gridStep=ySpan>25?5:ySpan>12?2:1;
@@ -745,7 +759,7 @@
         const targetY=y(targetWeight);
         ctx.save();ctx.setLineDash([7,5]);ctx.strokeStyle='#2f7d32';ctx.lineWidth=1.7;ctx.beginPath();ctx.moveTo(pad.l,targetY);ctx.lineTo(w-pad.r,targetY);ctx.stroke();ctx.restore();
         ctx.fillStyle='#215f27';ctx.font='700 10px -apple-system, sans-serif';ctx.textAlign='right';ctx.textBaseline='bottom';ctx.fillText(`Target ${formatWeight(targetWeight)} kg`,w-pad.r,targetY-5);
-        if(targetPoint){
+        if(targetPoint&&targetPoint.date<=lastDate){
         const targetX=x(targetPoint.date);ctx.save();ctx.setLineDash([4,5]);ctx.strokeStyle='#2f7d32';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(targetX,pad.t);ctx.lineTo(targetX,h-pad.b);ctx.stroke();ctx.restore();
         ctx.fillStyle='#2f7d32';ctx.beginPath();ctx.arc(targetX,targetY,5,0,Math.PI*2);ctx.fill();
         ctx.font='800 10px -apple-system, sans-serif';ctx.textAlign=targetX>w*.72?'right':'left';ctx.textBaseline='top';ctx.fillText(formatDate(targetPoint.date,{day:'numeric',month:'short',year:'numeric'}),targetX+(targetX>w*.72?-7:7),targetY+7);
@@ -764,6 +778,7 @@
       const days=startingDate&&last?Math.max(0,daysBetween(startingDate,last.date)):0;$('#chartDays').textContent=String(days);
       const daily=Number.isFinite(startingWeight)&&last&&days?(startingWeight-last.weight)/days:0;$('#chartDaily').textContent=`${daily.toLocaleString('it-IT',{minimumFractionDigits:3,maximumFractionDigits:3})} kg`;
       const forecast=projectionData();
+      $('#plotSubtitle').textContent=`Trend esponenziale a 7 giorni e proiezione robusta sugli ultimi 28 giorni${profile.chartEndDate?` · asse fino al ${formatNumericDate(profile.chartEndDate)}`:''}`;
       if(!Number.isFinite(forecast.targetWeight)){ $('#targetForecast').innerHTML='<strong>Target:</strong> completa altezza e sesso nelle impostazioni.'; return; }
       const targetLabel=`BMI ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})} · ${formatWeight(forecast.targetWeight)} kg`;
       if(!last) $('#targetForecast').innerHTML=`<strong>Target:</strong> ${targetLabel} · aggiungi un peso per calcolare la data.`;
@@ -793,6 +808,8 @@
       $('#initialWeight').value=profile.initialWeight==null?'':String(profile.initialWeight);
       $('#startDate').value=profile.startDate||'';
       $('#startDate').max=localISO();
+      $('#chartEndDate').value=profile.chartEndDate||'';
+      $('#chartEndDate').min=records[records.length-1]?.date||profile.startDate||localISO();
       $('#profileHeight').value=profile.heightCm==null?'':String(profile.heightCm);
       $('#targetBmi').value=String(profile.targetBmi);
       setRadioIn(settingsForm,'sex',profile.sex);
@@ -809,7 +826,7 @@
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(PROFILE_KEY);
       records=[];
-      profile={heightCm:null,sex:'',targetBmi:23.5,initialWeight:null,startDate:''};
+      profile={heightCm:null,sex:'',targetBmi:23.5,initialWeight:null,startDate:'',chartEndDate:''};
       resetForm();render();settingsDialog.close();showToast('Dati locali W8Log eliminati.');
       setTimeout(openSettings,350);
     });
@@ -819,19 +836,22 @@
       const targetBmi=Number(String($('#targetBmi').value).replace(',','.'));
       const initialWeight=Number(String($('#initialWeight').value).replace(',','.'));
       const startDate=$('#startDate').value;
+      const chartEndDate=$('#chartEndDate').value;
       const sex=settingsForm.elements.sex.value;
       if(!Number.isFinite(initialWeight)||initialWeight<25||initialWeight>350){showToast('Inserisci un peso iniziale valido.');$('#initialWeight').focus();return;}
       if(!/^\d{4}-\d{2}-\d{2}$/.test(startDate)||startDate>localISO()){showToast('Inserisci una data di inizio valida.');$('#startDate').focus();return;}
+      const minimumChartEnd=records[records.length-1]?.date||startDate;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(chartEndDate)||chartEndDate<startDate||chartEndDate<minimumChartEnd){showToast('La data finale dell’asse X deve seguire la data iniziale e l’ultima pesata.');$('#chartEndDate').focus();return;}
       if(!Number.isFinite(heightCm)||heightCm<100||heightCm>250){showToast('Inserisci un’altezza valida.');$('#profileHeight').focus();return;}
       if(!Number.isFinite(targetBmi)||targetBmi<10||targetBmi>60){showToast('Inserisci un BMI target valido.');$('#targetBmi').focus();return;}
       if(sex!=='M'&&sex!=='F'){showToast('Seleziona il sesso.');return;}
-      profile={heightCm:Math.round(heightCm*10)/10,sex,targetBmi:Math.round(targetBmi*10)/10,initialWeight:Math.round(initialWeight*10)/10,startDate};
+      profile={heightCm:Math.round(heightCm*10)/10,sex,targetBmi:Math.round(targetBmi*10)/10,initialWeight:Math.round(initialWeight*10)/10,startDate,chartEndDate};
       localStorage.setItem(PROFILE_KEY,JSON.stringify(profile));render();settingsDialog.close();showToast('Impostazioni salvate.');
     });
 
     $('#todayLabel').textContent=new Intl.DateTimeFormat('it-IT',{weekday:'long',day:'numeric',month:'long'}).format(new Date());
     resetForm();render();
-    if(!Number.isFinite(profile.heightCm)||!profile.sex||!Number.isFinite(profile.initialWeight)||!profile.startDate)setTimeout(openSettings,0);
+    if(!profileIsComplete())setTimeout(openSettings,0);
   })();
   </script>
 </body>
