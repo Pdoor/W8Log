@@ -80,12 +80,15 @@
 
     main { width: min(1120px, 100%); margin: auto; padding: 24px max(18px, env(safe-area-inset-right)) 54px max(18px, env(safe-area-inset-left)); }
     .intro { margin-bottom: 18px; display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+    .date-eyebrows { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 6px; }
     .eyebrow { margin: 0 0 6px; color: var(--green-dark); font-size: 12px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+    .date-eyebrows .eyebrow { margin: 0; }
+    .start-date-label { padding-left: 18px; border-left: 1px solid #b9cbb7; }
     .intro h2 { margin: 0; max-width: 680px; font-size: clamp(27px, 5vw, 42px); line-height: 1.05; letter-spacing: -.045em; }
     .intro-note { color: var(--muted); font-size: 13px; text-align: right; line-height: 1.45; }
 
-    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
-    .stat { min-height: 92px; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,254,250,.78); }
+    .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; margin-bottom: 18px; }
+    .stat { min-height: 86px; padding: 14px; border: 1px solid var(--line); border-radius: 17px; background: rgba(255,254,250,.78); }
     .stat-label { display: block; margin-bottom: 10px; color: var(--muted); font-size: 12px; font-weight: 700; }
     .stat-value { display: block; font-size: clamp(19px, 3vw, 27px); line-height: 1; font-weight: 820; letter-spacing: -.035em; }
     .stat-value.positive { color: var(--green-dark); }
@@ -219,12 +222,17 @@
     .settings-body .field + .field { margin-top: 20px; }
     .settings-help { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
     .settings-actions { display: flex; gap: 10px; margin-top: 24px; }
+    .settings-danger { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .settings-danger h3 { margin: 0 0 6px; color: var(--red); font-size: 13px; }
+    .settings-danger p { margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .clear-data-button { width: 100%; min-height: 44px; border: 1px solid #e2b8b3; border-radius: 12px; color: var(--red); background: #fff8f7; font-weight: 760; cursor: pointer; }
 
     @media (max-width: 820px) {
       main { padding-top: 18px; }
       .intro { align-items: start; }
       .intro-note { display: none; }
       .stats { grid-template-columns: 1fr 1fr; }
+      .stats .stat:last-child { grid-column: 1 / -1; }
       .workspace { grid-template-columns: 1fr; }
       .history-list { max-height: none; }
       .chart-kpis { grid-template-columns: 1fr 1fr; }
@@ -271,11 +279,12 @@
 
   <main>
     <section class="intro" aria-labelledby="page-title">
-      <div><p class="eyebrow" id="todayLabel">Oggi</p><h2 id="page-title">Registra la tua giornata.</h2></div>
+      <div><div class="date-eyebrows"><p class="eyebrow" id="todayLabel">Oggi</p><p class="eyebrow start-date-label" id="startDateLabel">Data inizio: —</p></div><h2 id="page-title">Registra la tua giornata.</h2></div>
       <div class="intro-note">I dati restano in questo browser.<br><span id="profileSummary">Profilo da configurare.</span></div>
     </section>
 
     <section class="stats" aria-label="Riepilogo">
+      <div class="stat"><span class="stat-label">Peso iniziale</span><strong class="stat-value" id="statInitial">—</strong></div>
       <div class="stat"><span class="stat-label">Peso attuale</span><strong class="stat-value" id="statCurrent">—</strong></div>
       <div class="stat"><span class="stat-label">Variazione totale</span><strong class="stat-value" id="statChange">—</strong></div>
       <div class="stat"><span class="stat-label">Media 7 giorni</span><strong class="stat-value" id="statSeven">—</strong></div>
@@ -414,6 +423,16 @@
     </div>
     <form id="settingsForm" class="settings-body">
       <div class="field">
+        <label class="field-label" for="initialWeight">Peso iniziale <small>obbligatorio</small></label>
+        <div class="weight-wrap"><input id="initialWeight" name="initialWeight" type="number" min="25" max="350" step="0.1" inputmode="decimal" required><span class="unit">kg</span></div>
+        <p class="settings-help">È il riferimento per calcolare la variazione totale.</p>
+      </div>
+      <div class="field">
+        <label class="field-label" for="startDate">Data inizio <small>obbligatoria</small></label>
+        <input id="startDate" name="startDate" type="date" required>
+        <p class="settings-help">Viene mostrata nel riepilogo e usata per il conteggio dei giorni.</p>
+      </div>
+      <div class="field">
         <label class="field-label" for="profileHeight">Altezza <small>obbligatoria</small></label>
         <div class="weight-wrap"><input id="profileHeight" name="height" type="number" min="100" max="250" step="0.1" inputmode="decimal" required><span class="unit">cm</span></div>
         <p class="settings-help">Viene usata con il peso per calcolare il BMI.</p>
@@ -434,6 +453,11 @@
       <div class="settings-actions">
         <button class="secondary" id="cancelSettings" type="button">Annulla</button>
         <button class="primary" type="submit">Salva impostazioni</button>
+      </div>
+      <div class="settings-danger">
+        <h3>Dati sul dispositivo</h3>
+        <p>iOS non permette a W8Log di cancellare la cache generale di Safari. Questo comando elimina soltanto storico e impostazioni salvati da W8Log su questo dispositivo.</p>
+        <button class="clear-data-button" id="clearLocalData" type="button">Pulisci dati W8Log</button>
       </div>
     </form>
   </dialog>
@@ -475,8 +499,10 @@
         const saved = JSON.parse(localStorage.getItem(PROFILE_KEY));
         const heightCm = Number(saved?.heightCm);
         const targetBmi = Number(saved?.targetBmi);
-        return {heightCm: heightCm >= 100 && heightCm <= 250 ? heightCm : null, sex: saved?.sex === 'M' || saved?.sex === 'F' ? saved.sex : '', targetBmi: targetBmi >= 10 && targetBmi <= 60 ? targetBmi : 23.5};
-      } catch (_) { return {heightCm:null, sex:'', targetBmi:23.5}; }
+        const initialWeight = Number(saved?.initialWeight);
+        const startDate = /^\d{4}-\d{2}-\d{2}$/.test(saved?.startDate||'') ? saved.startDate : '';
+        return {heightCm: heightCm >= 100 && heightCm <= 250 ? heightCm : null, sex: saved?.sex === 'M' || saved?.sex === 'F' ? saved.sex : '', targetBmi: targetBmi >= 10 && targetBmi <= 60 ? targetBmi : 23.5, initialWeight:initialWeight>=25&&initialWeight<=350?initialWeight:null, startDate};
+      } catch (_) { return {heightCm:null, sex:'', targetBmi:23.5, initialWeight:null, startDate:''}; }
     }
     function normalize(items) {
       if(!Array.isArray(items))return [];
@@ -498,6 +524,7 @@
     }
     function parseDate(iso) { return new Date(`${iso}T12:00:00`); }
     function formatDate(iso, options={day:'numeric',month:'short',year:'numeric'}) { return new Intl.DateTimeFormat('it-IT', options).format(parseDate(iso)); }
+    function formatNumericDate(iso) { return new Intl.DateTimeFormat('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}).format(parseDate(iso)); }
     function formatWeight(n) { return Number(n).toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1}); }
     function daysBetween(a,b) { return Math.round((parseDate(b)-parseDate(a))/86400000); }
     function addDays(iso,n) { const d=parseDate(iso); d.setDate(d.getDate()+n); return localISO(d); }
@@ -535,17 +562,19 @@
     function render() {
       records.sort((a,b)=>a.date.localeCompare(b.date));
       const first=records[0], last=records[records.length-1];
+      $('#statInitial').textContent=Number.isFinite(profile.initialWeight)?`${formatWeight(profile.initialWeight)} kg`:'—';
       $('#statCurrent').textContent=last ? `${formatWeight(last.weight)} kg` : '—';
-      const delta=first&&last ? last.weight-first.weight : null;
+      const delta=Number.isFinite(profile.initialWeight)&&last ? last.weight-profile.initialWeight : null;
       const change=$('#statChange');
       change.textContent=delta===null?'—':`${delta>0?'+':''}${formatWeight(delta)} kg`;
       change.className='stat-value '+(delta<0?'positive':delta>0?'negative':'');
       const recent=records.slice(-7); const avg=recent.length?recent.reduce((s,r)=>s+r.weight,0)/recent.length:null;
       $('#statSeven').textContent=avg===null?'—':`${formatWeight(avg)} kg`;
-      const profileReady=Number.isFinite(profile.heightCm)&&Boolean(profile.sex);
-      const heightM=profileReady?profile.heightCm/100:null;
+      const profileReady=Number.isFinite(profile.heightCm)&&Boolean(profile.sex)&&Number.isFinite(profile.initialWeight)&&Boolean(profile.startDate);
+      const heightM=Number.isFinite(profile.heightCm)?profile.heightCm/100:null;
       $('#statBmi').textContent=last&&heightM?(last.weight/(heightM*heightM)).toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
-      $('#profileSummary').textContent=profileReady?`Altezza: ${(profile.heightCm/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} m · Sesso: ${profile.sex} · Target BMI: ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})}`:'Completa altezza e sesso nelle impostazioni.';
+      $('#profileSummary').textContent=profileReady?`Altezza: ${(profile.heightCm/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} m · Sesso: ${profile.sex} · Target BMI: ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})}`:'Completa il profilo nelle impostazioni.';
+      $('#startDateLabel').textContent=profile.startDate?`Data inizio: ${formatNumericDate(profile.startDate)}`:'Data inizio: —';
       $('#historySummary').textContent=records.length===1?'1 registrazione':`${records.length} registrazioni`;
       historyList.innerHTML='';
       if(!records.length){historyList.innerHTML='<div class="empty">Nessun dato registrato.<br>Inizia compilando la giornata.</div>';return;}
@@ -597,7 +626,7 @@
     });
 
     $('#exportButton').addEventListener('click',()=>{
-      const payload={app:'W8Log',version:3,exportedAt:new Date().toISOString(),profile:{heightCm:profile.heightCm,sex:profile.sex,targetBmi:profile.targetBmi},records};
+      const payload={app:'W8Log',version:4,exportedAt:new Date().toISOString(),profile:{heightCm:profile.heightCm,sex:profile.sex,targetBmi:profile.targetBmi,initialWeight:profile.initialWeight,startDate:profile.startDate},records};
       const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
       const a=document.createElement('a');a.href=url;a.download=`controllo-peso-backup-${localISO()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);showToast('Backup esportato.');
     });
@@ -610,15 +639,18 @@
         const importedHeight=Number(importedProfile?.heightCm);
         const importedSex=importedProfile?.sex==='M'||importedProfile?.sex==='F'?importedProfile.sex:'';
         const importedTarget=Number(importedProfile?.targetBmi);
-        const hasValidProfile=importedHeight>=100&&importedHeight<=250&&Boolean(importedSex);
-        if(!incoming.length&&!hasValidProfile)throw new Error('empty');
-        if(!confirm(`Ripristinare ${incoming.length} registrazioni${hasValidProfile?' e le impostazioni del profilo':''}? I dati attuali saranno sostituiti.`))return;
+        const importedInitialWeight=Number(importedProfile?.initialWeight);
+        const importedStartDate=/^\d{4}-\d{2}-\d{2}$/.test(importedProfile?.startDate||'')?importedProfile.startDate:'';
+        const hasProfileData=Boolean(importedProfile)&&(importedHeight>=100&&importedHeight<=250||Boolean(importedSex)||importedInitialWeight>=25&&importedInitialWeight<=350||Boolean(importedStartDate));
+        if(!incoming.length&&!hasProfileData)throw new Error('empty');
+        if(!confirm(`Ripristinare ${incoming.length} registrazioni${hasProfileData?' e le impostazioni del profilo':''}? I dati attuali saranno sostituiti.`))return;
         records=incoming;
-        if(hasValidProfile){
-          profile={heightCm:importedHeight,sex:importedSex,targetBmi:importedTarget>=10&&importedTarget<=60?importedTarget:23.5};
+        if(hasProfileData){
+          profile={heightCm:importedHeight>=100&&importedHeight<=250?importedHeight:null,sex:importedSex,targetBmi:importedTarget>=10&&importedTarget<=60?importedTarget:23.5,initialWeight:importedInitialWeight>=25&&importedInitialWeight<=350?importedInitialWeight:null,startDate:importedStartDate};
           localStorage.setItem(PROFILE_KEY,JSON.stringify(profile));
         }
         persist();render();resetForm();showToast('Backup importato.');
+        if(!Number.isFinite(profile.heightCm)||!profile.sex||!Number.isFinite(profile.initialWeight)||!profile.startDate)setTimeout(openSettings,250);
       }catch(_){showToast('Il file non è un backup valido.');}finally{e.target.value='';}
     });
 
@@ -691,11 +723,13 @@
     }
     function populateChartKpis(){
       const first=records[0],last=records[records.length-1];
+      const startingWeight=Number.isFinite(profile.initialWeight)?profile.initialWeight:first?.weight;
+      const startingDate=profile.startDate||first?.date;
       $('#chartToday').textContent=formatDate(localISO(),{day:'numeric',month:'short'});
       $('#chartWeight').textContent=last?`${formatWeight(last.weight)} kg`:'—';
-      $('#chartLost').textContent=first&&last?`${formatWeight(first.weight-last.weight)} kg`:'—';
-      const days=first&&last?daysBetween(first.date,last.date):0;$('#chartDays').textContent=String(days);
-      const daily=first&&last&&days?(first.weight-last.weight)/days:0;$('#chartDaily').textContent=`${daily.toLocaleString('it-IT',{minimumFractionDigits:3,maximumFractionDigits:3})} kg`;
+      $('#chartLost').textContent=Number.isFinite(startingWeight)&&last?`${formatWeight(startingWeight-last.weight)} kg`:'—';
+      const days=startingDate&&last?Math.max(0,daysBetween(startingDate,last.date)):0;$('#chartDays').textContent=String(days);
+      const daily=Number.isFinite(startingWeight)&&last&&days?(startingWeight-last.weight)/days:0;$('#chartDaily').textContent=`${daily.toLocaleString('it-IT',{minimumFractionDigits:3,maximumFractionDigits:3})} kg`;
       const forecast=projectionData();
       if(!Number.isFinite(forecast.targetWeight)){ $('#targetForecast').innerHTML='<strong>Target:</strong> completa altezza e sesso nelle impostazioni.'; return; }
       const targetLabel=`BMI ${profile.targetBmi.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})} · ${formatWeight(forecast.targetWeight)} kg`;
@@ -721,6 +755,9 @@
     window.addEventListener('resize',()=>{if(dialog.open)drawChart();});
 
     function openSettings() {
+      $('#initialWeight').value=profile.initialWeight==null?'':String(profile.initialWeight);
+      $('#startDate').value=profile.startDate||'';
+      $('#startDate').max=localISO();
       $('#profileHeight').value=profile.heightCm==null?'':String(profile.heightCm);
       $('#targetBmi').value=String(profile.targetBmi);
       setRadioIn(settingsForm,'sex',profile.sex);
@@ -731,20 +768,35 @@
     $('#closeSettings').addEventListener('click',()=>settingsDialog.close());
     $('#cancelSettings').addEventListener('click',()=>settingsDialog.close());
     settingsDialog.addEventListener('click',e=>{if(e.target===settingsDialog)settingsDialog.close();});
+    $('#clearLocalData').addEventListener('click',()=>{
+      if(!confirm('Eliminare tutte le registrazioni e le impostazioni W8Log salvate su questo dispositivo?'))return;
+      if(!confirm('Conferma definitiva: questa operazione non può essere annullata senza un backup.'))return;
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(PROFILE_KEY);
+      records=[];
+      profile={heightCm:null,sex:'',targetBmi:23.5,initialWeight:null,startDate:''};
+      resetForm();render();settingsDialog.close();showToast('Dati locali W8Log eliminati.');
+      setTimeout(openSettings,350);
+    });
     settingsForm.addEventListener('submit',e=>{
       e.preventDefault();
       const heightCm=Number(String($('#profileHeight').value).replace(',','.'));
       const targetBmi=Number(String($('#targetBmi').value).replace(',','.'));
+      const initialWeight=Number(String($('#initialWeight').value).replace(',','.'));
+      const startDate=$('#startDate').value;
       const sex=settingsForm.elements.sex.value;
+      if(!Number.isFinite(initialWeight)||initialWeight<25||initialWeight>350){showToast('Inserisci un peso iniziale valido.');$('#initialWeight').focus();return;}
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(startDate)||startDate>localISO()){showToast('Inserisci una data di inizio valida.');$('#startDate').focus();return;}
       if(!Number.isFinite(heightCm)||heightCm<100||heightCm>250){showToast('Inserisci un’altezza valida.');$('#profileHeight').focus();return;}
       if(!Number.isFinite(targetBmi)||targetBmi<10||targetBmi>60){showToast('Inserisci un BMI target valido.');$('#targetBmi').focus();return;}
-      profile={heightCm:Math.round(heightCm*10)/10,sex:sex==='F'?'F':'M',targetBmi:Math.round(targetBmi*10)/10};
+      if(sex!=='M'&&sex!=='F'){showToast('Seleziona il sesso.');return;}
+      profile={heightCm:Math.round(heightCm*10)/10,sex,targetBmi:Math.round(targetBmi*10)/10,initialWeight:Math.round(initialWeight*10)/10,startDate};
       localStorage.setItem(PROFILE_KEY,JSON.stringify(profile));render();settingsDialog.close();showToast('Impostazioni salvate.');
     });
 
     $('#todayLabel').textContent=new Intl.DateTimeFormat('it-IT',{weekday:'long',day:'numeric',month:'long'}).format(new Date());
     resetForm();render();
-    if(!Number.isFinite(profile.heightCm)||!profile.sex)setTimeout(openSettings,0);
+    if(!Number.isFinite(profile.heightCm)||!profile.sex||!Number.isFinite(profile.initialWeight)||!profile.startDate)setTimeout(openSettings,0);
   })();
   </script>
 </body>
