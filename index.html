@@ -106,7 +106,7 @@
     .field.full { grid-column: 1 / -1; }
     .field-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 13px; font-weight: 790; }
     .field-label small { color: var(--muted); font-weight: 550; }
-    input[type="date"], input[type="number"] {
+    input[type="date"], input[type="number"], select {
       width: 100%;
       height: 49px;
       border: 1px solid #c9c7be;
@@ -117,6 +117,12 @@
       font-size: 16px;
       appearance: none;
     }
+    .select-wrap { position: relative; }
+    .select-wrap::after { content: ""; position: absolute; right: 17px; top: 50%; width: 8px; height: 8px; border-right: 2px solid #53605d; border-bottom: 2px solid #53605d; transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+    .select-wrap select { padding-right: 44px; cursor: pointer; font-weight: 660; }
+    .select-wrap select:invalid { color: #7a817f; font-weight: 500; }
+    .select-wrap select option { color: var(--ink); }
+    input[type="date"]:focus, input[type="number"]:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 4px rgba(47,125,50,.10); outline: none; }
     .weight-wrap { position: relative; }
     .weight-wrap input { padding-right: 48px; }
     .unit { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; font-weight: 750; pointer-events: none; }
@@ -292,16 +298,19 @@
               <div class="weight-wrap"><input id="weight" name="weight" type="number" min="25" max="350" step="0.1" inputmode="decimal" placeholder="es. 83,8" required><span class="unit">kg</span></div>
             </div>
 
-            <fieldset class="field full" style="border:0;padding:0;margin:0;">
-              <legend class="field-label" style="width:100%;"><span>Episodio NES rilevato al mattino</span><small>obbligatorio</small></legend>
-              <div class="choices" id="nesChoices">
-                <div class="choice"><input type="radio" name="nes" id="nes-none" value="nessuno" required><label for="nes-none">Nessuno</label></div>
-                <div class="choice"><input type="radio" name="nes" id="nes-low" value="basso"><label for="nes-low">Basso</label></div>
-                <div class="choice"><input type="radio" name="nes" id="nes-medium" value="moderato"><label for="nes-medium">Moderato</label></div>
-                <div class="choice"><input type="radio" name="nes" id="nes-high" value="alto"><label for="nes-high">Alto</label></div>
-                <div class="choice"><input type="radio" name="nes" id="nes-binge" value="abbuffata"><label for="nes-binge">Abbuffata</label></div>
+            <div class="field full">
+              <label class="field-label" for="nesSelect"><span>Episodio NES rilevato al mattino</span><small>obbligatorio</small></label>
+              <div class="select-wrap">
+                <select name="nes" id="nesSelect" required>
+                  <option value="" selected disabled>Seleziona il livello</option>
+                  <option value="nessuno">Nessuno</option>
+                  <option value="basso">Basso</option>
+                  <option value="moderato">Moderato</option>
+                  <option value="alto">Alto</option>
+                  <option value="abbuffata">Abbuffata</option>
+                </select>
               </div>
-            </fieldset>
+            </div>
 
             <div class="section-divider">Alimentazione del giorno precedente</div>
             <p class="section-context">I campi seguenti si riferiscono a <strong id="previousDayLabel">ieri</strong>, cioè al giorno prima della rilevazione.</p>
@@ -314,16 +323,33 @@
               </div>
             </fieldset>
 
-            <fieldset class="field full" style="border:0;padding:0;margin:0;">
-              <legend class="field-label" style="width:100%;"><span>Dieta del giorno precedente</span><small>obbligatorio</small></legend>
-              <div class="choices diet">
-                <div class="choice"><input type="radio" name="diet" id="diet-d" value="Dissociata" required><label for="diet-d">Dissociata</label></div>
-                <div class="choice"><input type="radio" name="diet" id="diet-l" value="Non dissociata pranzo"><label for="diet-l">Non dissociata pranzo</label></div>
-                <div class="choice"><input type="radio" name="diet" id="diet-din" value="Non dissociata cena"><label for="diet-din">Non dissociata cena</label></div>
-                <div class="choice"><input type="radio" name="diet" id="diet-both" value="Non dissociata pranzo &amp; cena"><label for="diet-both">Non dissociata pranzo &amp; cena</label></div>
-                <div class="choice"><input type="radio" name="diet" id="diet-breakfast" value="Non dissociata colazione"><label for="diet-breakfast">Non dissociata colazione</label></div>
+            <div class="field full">
+              <label class="field-label" for="dietSelect"><span>Dieta del giorno precedente</span><small>obbligatorio</small></label>
+              <div class="select-wrap">
+                <select name="diet" id="dietSelect" required>
+                  <option value="" selected disabled>Seleziona il tipo di dieta</option>
+                  <option value="Dissociata">Dissociata</option>
+                  <option value="Non dissociata pranzo">Non dissociata pranzo</option>
+                  <option value="Non dissociata cena">Non dissociata cena</option>
+                  <option value="Non dissociata pranzo &amp; cena">Non dissociata pranzo &amp; cena</option>
+                  <option value="Non dissociata colazione">Non dissociata colazione</option>
+                </select>
               </div>
-            </fieldset>
+            </div>
+
+            <div class="field full">
+              <label class="field-label" for="drinksSelect"><span>Bevande pranzo / cena</span><small>obbligatorio</small></label>
+              <div class="select-wrap">
+                <select name="drinks" id="drinksSelect" required>
+                  <option value="" selected disabled>Seleziona la bevanda</option>
+                  <option value="Solo acqua">Solo acqua</option>
+                  <option value="Bevanda gassata">Bevanda gassata</option>
+                  <option value="Long drink">Long drink</option>
+                  <option value="Vino">Vino</option>
+                  <option value="Birra">Birra</option>
+                </select>
+              </div>
+            </div>
 
             <fieldset class="field full" style="border:0;padding:0;margin:0;">
               <legend class="field-label" style="width:100%;"><span>Colazione del giorno precedente</span><small>obbligatorio</small></legend>
@@ -455,7 +481,7 @@
       const map = new Map();
       items.forEach(r => {
         if (!r || !/^\d{4}-\d{2}-\d{2}$/.test(r.date) || !Number.isFinite(Number(r.weight))) return;
-        map.set(r.date, {date:r.date, weight:Number(r.weight), nes:r.nes||'', nesFood:r.nesFood||'', diet:r.diet||'', breakfast:r.breakfast||''});
+        map.set(r.date, {date:r.date, weight:Number(r.weight), nes:r.nes||'', nesFood:r.nesFood||'', diet:r.diet||'', drinks:r.drinks||'', breakfast:r.breakfast||''});
       });
       return [...map.values()].sort((a,b) => a.date.localeCompare(b.date));
     }
@@ -498,8 +524,8 @@
     function editRecord(date) {
       const r=records.find(x=>x.date===date); if(!r)return;
       editingDate=r.date; dateInput.value=r.date; weightInput.value=String(r.weight);
-      setRadio('nes',r.nes); setFoodAvailability(); setRadio('nesFood',r.nesFood);
-      setRadio('diet',r.diet); setRadio('breakfast',r.breakfast);
+      form.elements.nes.value=r.nes||''; setFoodAvailability(); setRadio('nesFood',r.nesFood);
+      form.elements.diet.value=r.diet||''; form.elements.drinks.value=r.drinks||''; setRadio('breakfast',r.breakfast);
       $('#saveButton').textContent='Aggiorna giornata'; $('#deleteButton').classList.remove('hidden');
       window.scrollTo({top:0,behavior:'smooth'}); weightInput.focus({preventScroll:true});
     }
@@ -523,7 +549,7 @@
       [...records].reverse().forEach((r,i,rev)=>{
         const prev=rev[i+1]; const d=prev?r.weight-prev.weight:null;
         const dt=parseDate(r.date);
-        const meta=[r.nes&&r.nes!=='nessuno'?`NES ${r.nes}`:'Nessun episodio NES',r.diet,r.breakfast?`Colazione ${r.breakfast.toLowerCase()}`:''].filter(Boolean).join(' · ');
+        const meta=[r.nes&&r.nes!=='nessuno'?`NES ${r.nes}`:'Nessun episodio NES',r.diet,r.drinks?`Bevande: ${r.drinks.toLowerCase()}`:'',r.breakfast?`Colazione ${r.breakfast.toLowerCase()}`:''].filter(Boolean).join(' · ');
         const row=document.createElement('div'); row.className='entry'; row.dataset.date=r.date;
         row.innerHTML=`<span class="entry-date"><strong>${dt.getDate()}</strong><span>${new Intl.DateTimeFormat('it-IT',{month:'short'}).format(dt)}</span></span><button class="entry-main" type="button" data-action="edit" aria-label="Modifica registrazione del ${formatDate(r.date)}"><strong>${formatWeight(r.weight)} kg</strong><span class="entry-meta">${escapeHtml(meta)}</span></button><span class="trend ${d<0?'down':d>0?'up':''}">${d===null?'':`${d>0?'+':''}${formatWeight(d)}`}</span><span class="entry-actions"><button class="entry-action edit" type="button" data-action="edit" aria-label="Modifica"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 16-.7 4.7L8 20l10.8-10.8a2.1 2.1 0 0 0-3-3L5 17Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m14.5 7.5 3 3" stroke="currentColor" stroke-width="1.8"/></svg></button><button class="entry-action delete" type="button" data-action="delete" aria-label="Elimina"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3m2 0-1 13H8L7 7m3.5 3v7m3-7v7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>`;
         historyList.appendChild(row);
@@ -536,12 +562,13 @@
       if(!dateInput.value){showToast('Scegli una data.');dateInput.focus();return;}
       const weight=Number(String(weightInput.value).replace(',','.'));
       if(!Number.isFinite(weight)||weight<25||weight>350){showToast('Inserisci un peso valido.');weightInput.focus();return;}
-      const diet=selected('diet'), breakfast=selected('breakfast');
+      const diet=selected('diet'), drinks=selected('drinks'), breakfast=selected('breakfast');
       const nes=selected('nes');
       if(!nes){showToast('Indica il livello dell’episodio NES o scegli Nessuno.');return;}
       if(!diet){showToast('Scegli la dieta giornaliera.');return;}
+      if(!drinks){showToast('Scegli le bevande di pranzo e cena.');return;}
       if(!breakfast){showToast('Indica se hai fatto colazione.');return;}
-      const record={date:dateInput.value,weight:Math.round(weight*10)/10,nes,nesFood:nes!=='nessuno'?selected('nesFood'):'',diet,breakfast};
+      const record={date:dateInput.value,weight:Math.round(weight*10)/10,nes,nesFood:nes!=='nessuno'?selected('nesFood'):'',diet,drinks,breakfast};
       if(editingDate && editingDate!==record.date) records=records.filter(r=>r.date!==editingDate);
       const index=records.findIndex(r=>r.date===record.date);
       if(index>=0) records[index]=record; else records.push(record);
@@ -552,7 +579,7 @@
       const existing=records.find(r=>r.date===dateInput.value);
       if(existing) editRecord(existing.date);
     });
-    $('#nesChoices').addEventListener('change',setFoodAvailability);
+    $('#nesSelect').addEventListener('change',setFoodAvailability);
     historyList.addEventListener('click',e=>{
       const row=e.target.closest('.entry');if(!row)return;
       if(e.target.closest('[data-action="delete"]')){deleteRecord(row.dataset.date);return;}
